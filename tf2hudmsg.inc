@@ -119,8 +119,7 @@ methodmap CursorAnnotation {
 	public native void Hide();
 }
 
-public SharedPlugin __pl_tf2hudmsg = 
-{
+public SharedPlugin __pl_tf2hudmsg = {
     name = "tf2hudmsg",
     file = "tf2hudmsg.smx",
 #if defined REQUIRE_PLUGIN
@@ -129,3 +128,28 @@ public SharedPlugin __pl_tf2hudmsg =
     required = 0,
 #endif
 };
+
+#if !defined REQUIRE_PLUGIN
+public void __pl_tf2hudmsg_SetNTVOptional() {
+	MarkNativeAsOptional("CursorAnnotation.CursorAnnotation");
+	MarkNativeAsOptional("CursorAnnotation.Close");
+	MarkNativeAsOptional("CursorAnnotation.IsValid.get");
+	MarkNativeAsOptional("CursorAnnotation.SetVisibilityFor");
+	MarkNativeAsOptional("CursorAnnotation.SetVisibilityAll");
+	MarkNativeAsOptional("CursorAnnotation.VisibilityBitmask.get",Native_CursorAnnotation_VisibilityBitmask_Get);
+	MarkNativeAsOptional("CursorAnnotation.VisibilityBitmask.set",Native_CursorAnnotation_VisibilityBitmask_Set);
+	MarkNativeAsOptional("CursorAnnotation.Data.get");
+	MarkNativeAsOptional("CursorAnnotation.Data.set");
+	MarkNativeAsOptional("CursorAnnotation.SetText");
+	MarkNativeAsOptional("CursorAnnotation.SetPosition");
+	MarkNativeAsOptional("CursorAnnotation.GetPosition");
+	MarkNativeAsOptional("CursorAnnotation.SetLifetime");
+	MarkNativeAsOptional("CursorAnnotation.ParentEntity.get");
+	MarkNativeAsOptional("CursorAnnotation.ParentEntity.set");
+	MarkNativeAsOptional("CursorAnnotation.IsPlaying.get");
+	MarkNativeAsOptional("CursorAnnotation.Update");
+	MarkNativeAsOptional("CursorAnnotation.Hide");
+	MarkNativeAsOptional("TF2_HudNotificationCustom");
+	MarkNativeAsOptional("TF2_HudNotificationCustomAll");
+}
+#endif

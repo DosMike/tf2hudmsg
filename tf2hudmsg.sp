@@ -21,7 +21,7 @@ public Plugin myinfo = {
 	name = "[TF2] Hud Msg",
 	author = "reBane",
 	description = "Providing natives for some Hud Elements and managing Cursor Annotation indices",
-	version = "21w29a",
+	version = "21w32a",
 	url = "N/A"
 }
 
