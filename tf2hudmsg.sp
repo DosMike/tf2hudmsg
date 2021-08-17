@@ -12,6 +12,7 @@
 // Some usefull links:
 // all dumps: https://github.com/powerlord/tf2-data
 // annotations: https://forums.alliedmods.net/showthread.php?p=1946768
+//   tf_hud_annotationspanel.cpp <- These use EditablePanel, so can use #LocalizationKeys
 // hudnotifycustom: https://forums.alliedmods.net/showthread.php?t=155911
 
 #pragma newdecls required
@@ -21,7 +22,7 @@ public Plugin myinfo = {
 	name = "[TF2] Hud Msg",
 	author = "reBane",
 	description = "Providing natives for some Hud Elements and managing Cursor Annotation indices",
-	version = "21w32a",
+	version = "21w33a",
 	url = "N/A"
 }
 
@@ -33,8 +34,6 @@ public void OnPluginStart() {
 public void OnMapStart() {
 	updateAnnotationsMapchange();
 }
-
-// https://forums.alliedmods.net/showthread.php?p=1946768
 
 #define MAX_ANNOTATION_COUNT 50*MAXPLAYERS
 
@@ -74,6 +73,7 @@ enum struct AnnotationData {
 		event.SetFloat("worldPosY", this.pos[1]);
 		event.SetFloat("worldPosZ", this.pos[2]);
 		event.SetFloat("lifetime", this.lifetime);
+		// they seem to have a <bool>"show_distance"
 		event.SetInt("id", selfIndex);
 		if (!strlen(this.text)) //prevent default *AnnotationPannel_Callout
 			event.SetString("text", " ");
@@ -182,6 +182,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("CursorAnnotation.Hide",                 Native_CursorAnnotation_Hide);
 	CreateNative("TF2_HudNotificationCustom",             Native_TF2_HudNotificationCustom);
 	CreateNative("TF2_HudNotificationCustomAll",          Native_TF2_HudNotificationCustomAll);
+	CreateNative("EscapeVGUILocalization",                Native_EscapeVGUILocalization);
 	RegPluginLibrary("tf2hudmsg");
 	return APLRes_Success;
 }
@@ -334,4 +335,37 @@ public any Native_TF2_HudNotificationCustomAll(Handle plugin, int argc) {
 		FormatNativeString(0,4,5,MAX_MESSAGE_LENGTH,_,message,_);
 		Impl_HudNotificationCustom(i, icon, background, stripcol, message);
 	}
+}
+
+//native void EscapeVGUILocalization(char[] buffer, int maxsize);
+public any Native_EscapeVGUILocalization(Handle plugin, int argc) {
+	if (IsNativeParamNullString(1)) return;
+	int maxlen = view_as<int>(GetNativeCell(2));
+	int inlen;
+	char[] buffer = new char[maxlen];
+	GetNativeString(1, buffer, maxlen, inlen);
+	if (!inlen) return; //string is empty, nothing to do
+	
+	//prevent #LocalizationKeys from being looked up
+	// For a localization to be considered, the string MIGHT start with a number sign but they usually
+	// don't contain spaces and are ASCII strings
+	// Not being a localization does not modify the string but we have no real way to check if this is
+	// a localization or not, so let's just prefix it with a space (barely noticable in annotations)
+	bool mightkey=true;
+	for(int i=0;i<maxlen;i++) { //check if this matches ^#?\w*$
+		if (buffer[i]==0) break;
+		if (!('a' <= buffer[i] <= 'z' || 'A' <= buffer[i] <= 'Z' || '0' <= buffer[i] <= '9' || buffer[i]=='_' || buffer[i]=='-' || (!i && buffer[i]=='#'))) {
+			mightkey=false;
+		}
+	}
+	if (mightkey) {
+		//\x1f is the unit separator and does not render, so we can use it as zero-width non-whitespace prefix
+		Format(buffer, maxlen, "\x1f%s", buffer);
+	}
+	//after looking up #LocalizationKeys, source tries to agressively fill %Placeholders
+	//those placeholders usually look like %s1 or something, so we need to get rid of the percent symbols
+	ReplaceString(buffer, maxlen, "%", "\xEF\xBC\x85"); //the replacement is a "full wide percent"
+	
+	//alright, let's copy you back where you belong
+	SetNativeString(1, buffer, maxlen);
 }

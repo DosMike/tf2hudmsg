@@ -75,6 +75,7 @@ methodmap CursorAnnotation {
 	}
 	/** 
 	 * Set the text for this annotation. Checks if the new message differs from the previously buffered to prevent flickering.
+	 * This does support localization strings! Use EscapeVGUILocalization() if you don't want that
 	 * @return true if the supplied text was different
 	 */
 	public native bool SetText(const char[] text);
@@ -119,6 +120,21 @@ methodmap CursorAnnotation {
 	public native void Hide();
 }
 
+// --== Some utilities ==--
+
+/**
+ * This method modifies the string in the buffer to prevent VGUI panels from interpreting the text
+ * as localization or template string.
+ * - If the buffer starts with # (looks like a localization key) it will be prefixed with \x1f (not rendered)
+ * - All percent signs are replace with the utf8 "full wide percent" to prevent agressive template lookup
+ * - Trailing incomplete utf8 characters are trimmed
+ * 
+ * @param buffer - the message
+ * @param maxsize - the size of the buffer
+ * @noreturn
+ */
+native void EscapeVGUILocalization(char[] buffer, int maxsize);
+
 public SharedPlugin __pl_tf2hudmsg = {
     name = "tf2hudmsg",
     file = "tf2hudmsg.smx",
@@ -151,5 +167,6 @@ public void __pl_tf2hudmsg_SetNTVOptional() {
 	MarkNativeAsOptional("CursorAnnotation.Hide");
 	MarkNativeAsOptional("TF2_HudNotificationCustom");
 	MarkNativeAsOptional("TF2_HudNotificationCustomAll");
+	MarkNativeAsOptional("EscapeVGUILocalization");
 }
 #endif
