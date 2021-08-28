@@ -1,0 +1,3 @@
+sourcemod 1.10
+dependency raw https://raw.githubusercontent.com/DoctorMcKay/sourcemod-plugins/master/scripting/include/morecolors.inc
+spcomp tf2hudmsg.sp -v2
