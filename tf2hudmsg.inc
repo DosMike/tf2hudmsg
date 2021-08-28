@@ -132,7 +132,7 @@ methodmap CursorAnnotation {
 	 *
 	 * @throw if the cursor annotation was closed
 	 */
-	property int AutoClose {
+	property bool AutoClose {
 		public native get();
 		public native set(bool value);
 	}

@@ -219,7 +219,7 @@ public any Native_CursorAnnotation_IsValid_Get(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetVisibilityFor(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int client = view_as<int>(GetNativeCell(2));
 	bool visible = view_as<bool>(GetNativeCell(3));
@@ -228,7 +228,7 @@ public any Native_CursorAnnotation_SetVisibilityFor(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetVisibilityAll(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	bool visible = view_as<bool>(GetNativeCell(2));
 	
@@ -236,14 +236,14 @@ public any Native_CursorAnnotation_SetVisibilityAll(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	
 	return annotations[index].visibility;
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int value = view_as<int>(GetNativeCell(2));
 	
@@ -251,14 +251,14 @@ public any Native_CursorAnnotation_VisibilityBitmask_Set(Handle plugin, int argc
 }
 public any Native_CursorAnnotation_Data_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	
 	return annotations[index].plugindata;
 }
 public any Native_CursorAnnotation_Data_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	any value = GetNativeCell(2);
 	
@@ -266,7 +266,7 @@ public any Native_CursorAnnotation_Data_Set(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetText(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int len;
 	GetNativeStringLength(2,len);
@@ -279,7 +279,7 @@ public any Native_CursorAnnotation_SetText(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetPosition(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	float vec[3];
 	GetNativeArray(2,vec,sizeof(vec));
@@ -288,7 +288,7 @@ public any Native_CursorAnnotation_SetPosition(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_GetPosition(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	float vec[3];
 	
@@ -297,7 +297,7 @@ public any Native_CursorAnnotation_GetPosition(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetLifetime(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	float lifetime = view_as<float>(GetNativeCell(2));
 	
@@ -305,14 +305,14 @@ public any Native_CursorAnnotation_SetLifetime(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_ParentEntity_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	
 	return annotations[index].followEntity;
 }
 public any Native_CursorAnnotation_ParentEntity_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int entity = view_as<int>(GetNativeCell(2));
 	
@@ -325,14 +325,14 @@ public any Native_CursorAnnotation_IsPlaying_Get(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_AutoClose_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	
 	return annotations[index].autoclose;
 }
 public any Native_CursorAnnotation_AutoClose_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	bool value = view_as<bool>(GetNativeCell(1));
 	
@@ -340,7 +340,7 @@ public any Native_CursorAnnotation_AutoClose_Set(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_Update(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotaions[index].idused)
+	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int len;
 	GetNativeStringLength(2,len);
