@@ -22,7 +22,7 @@ public Plugin myinfo = {
 	name = "[TF2] Hud Msg",
 	author = "reBane",
 	description = "Providing natives for some Hud Elements and managing Cursor Annotation indices",
-	version = "21w33a",
+	version = "21w34a",
 	url = "N/A"
 }
 
@@ -43,6 +43,7 @@ enum struct AnnotationData {
 	float pos[3];
 	float lifetime;
 	float timeoutestimate; // the time where this annotation will be timed out (through lifetime after Send)
+	bool autoclose; //automatically reset the idused state after timeoutestimate or hide -> fire and forget
 	int visibility;
 	char text[MAX_ANNOTATION_LENGTH];
 	bool isDeployed;
@@ -61,7 +62,10 @@ enum struct AnnotationData {
 		else this.followEntity = (entity >= 0) ? EntIndexToEntRef(entity) : entity;
 	}
 	bool IsPlaying() {
-		if (this.timeoutestimate <= GetGameTime()) this.isDeployed = false;
+		if (this.timeoutestimate <= GetGameTime()) {
+			if (this.autoclose) this.idused = false;
+			this.isDeployed = false;
+		}
 		return this.isDeployed;
 	}
 	/** @return true if the annotaion was sent to clients */
@@ -95,6 +99,7 @@ enum struct AnnotationData {
 		event.SetInt("id", selfIndex);
 		event.Fire();
 		this.isDeployed = false;
+		if (this.autoclose) this.idused = false;
 		return true;
 	}
 }
@@ -104,6 +109,10 @@ any Impl_CursorAnnotation_new(int index = -1, bool reset=false) {
 		//find free index
 		for (int i;i<MAX_ANNOTATION_COUNT;i++) {
 			if (!annotations[i].idused) {
+				index = i;
+				break;
+			} else if (annotations[i].autoclose && annotations[i].timeoutestimate <= GetGameTime()) {
+				annotations[i].idused = false;
 				index = i;
 				break;
 			}
@@ -120,6 +129,7 @@ any Impl_CursorAnnotation_new(int index = -1, bool reset=false) {
 		annotations[index].SetText("< ERROR >");
 		annotations[index].pos = zero;
 		annotations[index].idused = true;
+		annotations[index].autoclose = false;
 		annotations[index].plugindata = 0;
 		if (annotations[index].isDeployed) {
 			annotations[index].Hide(index);
@@ -132,6 +142,7 @@ void updateAnnotationsMapchange() {
 	for (int i;i<MAX_ANNOTATION_COUNT;i++) {
 		annotations[i].timeoutestimate = 0.0;
 		annotations[i].isDeployed = false;
+		if (annotations[i].autoclose) annotations[i].idused = false;
 	}
 }
 
@@ -178,6 +189,8 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("CursorAnnotation.ParentEntity.get",     Native_CursorAnnotation_ParentEntity_Get);
 	CreateNative("CursorAnnotation.ParentEntity.set",     Native_CursorAnnotation_ParentEntity_Set);
 	CreateNative("CursorAnnotation.IsPlaying.get",        Native_CursorAnnotation_IsPlaying_Get);
+	CreateNative("CursorAnnotation.AutoClose.get",        Native_CursorAnnotation_AutoClose_Get);
+	CreateNative("CursorAnnotation.AutoClose.set",        Native_CursorAnnotation_AutoClose_Set);
 	CreateNative("CursorAnnotation.Update",               Native_CursorAnnotation_Update);
 	CreateNative("CursorAnnotation.Hide",                 Native_CursorAnnotation_Hide);
 	CreateNative("TF2_HudNotificationCustom",             Native_TF2_HudNotificationCustom);
@@ -206,6 +219,8 @@ public any Native_CursorAnnotation_IsValid_Get(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetVisibilityFor(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int client = view_as<int>(GetNativeCell(2));
 	bool visible = view_as<bool>(GetNativeCell(3));
 	
@@ -213,34 +228,46 @@ public any Native_CursorAnnotation_SetVisibilityFor(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetVisibilityAll(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	bool visible = view_as<bool>(GetNativeCell(2));
 	
 	annotations[index].visibility = (visible) ? -1 : 0;
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	
 	return annotations[index].visibility;
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int value = view_as<int>(GetNativeCell(2));
 	
 	annotations[index].visibility = value;
 }
 public any Native_CursorAnnotation_Data_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	
 	return annotations[index].plugindata;
 }
 public any Native_CursorAnnotation_Data_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	any value = GetNativeCell(2);
 	
 	annotations[index].plugindata = value;
 }
 public any Native_CursorAnnotation_SetText(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int len;
 	GetNativeStringLength(2,len);
 	char[] text = new char[len+1];
@@ -252,6 +279,8 @@ public any Native_CursorAnnotation_SetText(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetPosition(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	float vec[3];
 	GetNativeArray(2,vec,sizeof(vec));
 	
@@ -259,6 +288,8 @@ public any Native_CursorAnnotation_SetPosition(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_GetPosition(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	float vec[3];
 	
 	vec = annotations[index].pos;
@@ -266,17 +297,23 @@ public any Native_CursorAnnotation_GetPosition(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetLifetime(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	float lifetime = view_as<float>(GetNativeCell(2));
 	
 	annotations[index].lifetime = lifetime;
 }
 public any Native_CursorAnnotation_ParentEntity_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	
 	return annotations[index].followEntity;
 }
 public any Native_CursorAnnotation_ParentEntity_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int entity = view_as<int>(GetNativeCell(2));
 	
 	annotations[index].SetParent(entity);
@@ -286,8 +323,25 @@ public any Native_CursorAnnotation_IsPlaying_Get(Handle plugin, int argc) {
 	
 	return annotations[index].IsPlaying();
 }
+public any Native_CursorAnnotation_AutoClose_Get(Handle plugin, int argc) {
+	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	
+	return annotations[index].autoclose;
+}
+public any Native_CursorAnnotation_AutoClose_Set(Handle plugin, int argc) {
+	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	bool value = view_as<bool>(GetNativeCell(1));
+	
+	return annotations[index].autoclose = value;
+}
 public any Native_CursorAnnotation_Update(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!annotaions[index].idused)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
 	int len;
 	GetNativeStringLength(2,len);
 	char[] sound = new char[len+1];

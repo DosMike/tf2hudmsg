@@ -52,22 +52,31 @@ methodmap CursorAnnotation {
 	}
 	
 	/**
-	 * set the visibility for a specific player;
+	 * Set the visibility for a specific player
+	 *
+	 * @throw if the cursor annotation was closed
 	 */
 	public native void SetVisibilityFor(int client, bool visible=true);
 	/**
-	 * set the visibility of this annotation for all players
+	 * Set the visibility of this annotation for all players
+	 *
+	 * @throw if the cursor annotation was closed
 	 */
 	public native void SetVisibilityAll(bool visible);
 	/**
 	 * with a maximum of 32 players, this bitmask represents the client that can see this annotation
+	 *
+	 * @throw if the cursor annotation was closed
 	 */
 	property int VisibilityBitmask {
 		public native get();
 		public native set(int value);
 	}
 	/**
-	 * Some additional data you can attach to the annotation
+	 * Some additional data you can attach to the annotation.
+	 * Even if the cusror annotation is marked to auto close, this will not close handles you store in here!
+	 * 
+	 * @throw if the cursor annotation was closed
 	 */
 	property any Data {
 		public native get();
@@ -76,15 +85,21 @@ methodmap CursorAnnotation {
 	/** 
 	 * Set the text for this annotation. Checks if the new message differs from the previously buffered to prevent flickering.
 	 * This does support localization strings! Use EscapeVGUILocalization() if you don't want that
+	 *
 	 * @return true if the supplied text was different
+	 * @throw if the cursor annotation was closed
 	 */
 	public native bool SetText(const char[] text);
 	/**
-	 * Set the position of this cursor annotation. Dunno if it can be used as offset to the parent entity.
+	 * Set the position of this cursor annotation. Can be used as offset to the parent entity.
+	 *
+	 * @throw if the cursor annotation was closed
 	 */
 	public native void SetPosition(const float vec[3]);
 	/**
-	 * Get the position of this cursor annotation. Dunno if it can be used as offset to the parent entity.
+	 * Get the position of this cursor annotation.
+	 *
+	 * @throw if the cursor annotation was closed
 	 */
 	public native void GetPosition(float vec[3]);
 	/**
@@ -94,6 +109,8 @@ methodmap CursorAnnotation {
 	public native void SetLifetime(float lifetime);
 	/**
 	 * The Parent Entity is the Entity that this annotation follows
+	 *
+	 * @throw if the cursor annotation was closed
 	 */
 	property int ParentEntity {
 		public native get();
@@ -108,10 +125,23 @@ methodmap CursorAnnotation {
 		public native get();
 	}
 	/**
+	 * This enables fire-and-forget mode. The CursorAnnotation id will automatically
+	 * be release after either the display time ran out, the annotation was hidden
+	 * or the map changes.
+	 * Note: Please set the lifetime to a reasonable value if you use this!
+	 *
+	 * @throw if the cursor annotation was closed
+	 */
+	property int AutoClose {
+		public native get();
+		public native set(bool value);
+	}
+	/**
 	 * Update and show the annotation according to the currently set up data
 	 * 
 	 * @param sound the sound to play along the annotation
 	 * @param showEffect emits a green radial becon
+	 * @throw if the cursor annotation was closed
 	 */
 	public native void Update(const char[] sound = "misc/null.wav", bool showEffect=false);
 	/**
