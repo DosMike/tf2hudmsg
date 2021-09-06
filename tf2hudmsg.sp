@@ -22,7 +22,7 @@ public Plugin myinfo = {
 	name = "[TF2] Hud Msg",
 	author = "reBane",
 	description = "Providing natives for some Hud Elements and managing Cursor Annotation indices",
-	version = "21w34a",
+	version = "21w35a",
 	url = "N/A"
 }
 
@@ -70,7 +70,7 @@ enum struct AnnotationData {
 	}
 	/** @return true if the annotaion was sent to clients */
 	bool Send(int selfIndex, const char[] sound, bool showEffect = false) {
-		if (!(this.isDeployed = !!this.visibility)) return false;
+		if (!(this.isDeployed = !!this.visibility)) return false; //ignrore if nobody will be able to see
 		Event event = CreateEvent("show_annotation");
 		if (event == INVALID_HANDLE) return false;
 		event.SetFloat("worldPosX", this.pos[0]);
@@ -334,7 +334,7 @@ public any Native_CursorAnnotation_AutoClose_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
 	if (!annotations[index].idused)
 		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
-	bool value = view_as<bool>(GetNativeCell(1));
+	bool value = view_as<bool>(GetNativeCell(2));
 	
 	return annotations[index].autoclose = value;
 }
