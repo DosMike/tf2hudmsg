@@ -3,6 +3,9 @@
 #endif
 #define _inc_tf2hudmsg
 
+#pragma newdecls required
+#pragma semicolon 1
+
 // --== NATIVES ==--
 
 /**
@@ -30,11 +33,15 @@ native void TF2_HudNotificationCustomAll(const char[] icon="voice_self", int bac
 // --== Yay, CursorAnnotations for everyone ==--
 
 /** Maximum length of an annotation message */
-#define MAX_ANNOTATION_LENGTH 256
+#define MAX_ANNOTATION_LENGTH 512
+
+enum CursorAnnotation { INVALID_ANNOTATION = -1 };
+//#define INVALID_ANNOTATION (view_as<CursorAnnotation>(-1))
 
 /**
  * While an annotation is not a handle, you can remove it by calling Close. You can not however use delete.
  * Changing any values will require you to call send, in order for the clients to receive the updated information.
+ * This is not supported if a server runs with max players above 32(33)!
  */
 methodmap CursorAnnotation {
 	
@@ -64,7 +71,9 @@ methodmap CursorAnnotation {
 	 */
 	public native void SetVisibilityAll(bool visible);
 	/**
-	 * with a maximum of 32 players, this bitmask represents the client that can see this annotation
+	 * With a maximum of 32 players, this bitmask represents the client that can see this annotation.
+	 * If you increased max players above 32, up to 4 players might see the cursor annotation per bit,
+	 * as the visibility bit for a player seems to be calculated with (1<<(playerIndex%32))
 	 *
 	 * @throw if the cursor annotation was closed
 	 */
@@ -81,6 +90,15 @@ methodmap CursorAnnotation {
 	property any Data {
 		public native get();
 		public native set(any value);
+	}
+	/**
+	 * Enabling this will show a distance indicator to the target position/entity.
+	 * 
+	 * @throw if the cursor annotation was closed
+	 */
+	property bool ShowDistance {
+		public native get();
+		public native set(bool value);
 	}
 	/** 
 	 * Set the text for this annotation. Checks if the new message differs from the previously buffered to prevent flickering.
@@ -104,7 +122,8 @@ methodmap CursorAnnotation {
 	public native void GetPosition(float vec[3]);
 	/**
 	 * Set the lifetime for this annotation in seconds. 
-	 * Set it super high if you don't want it to go away. (1800.0 = 30 min)
+	 * Set it super high if you don't want it to go away. (1800.0 = 30 min).
+	 * Default is 10, fallback (0) is 1, fadeout time is 1, <0 is infinite.
 	 */
 	public native void SetLifetime(float lifetime);
 	/**
@@ -182,8 +201,10 @@ public void __pl_tf2hudmsg_SetNTVOptional() {
 	MarkNativeAsOptional("CursorAnnotation.IsValid.get");
 	MarkNativeAsOptional("CursorAnnotation.SetVisibilityFor");
 	MarkNativeAsOptional("CursorAnnotation.SetVisibilityAll");
-	MarkNativeAsOptional("CursorAnnotation.VisibilityBitmask.get",Native_CursorAnnotation_VisibilityBitmask_Get);
-	MarkNativeAsOptional("CursorAnnotation.VisibilityBitmask.set",Native_CursorAnnotation_VisibilityBitmask_Set);
+	MarkNativeAsOptional("CursorAnnotation.VisibilityBitmask.get");
+	MarkNativeAsOptional("CursorAnnotation.VisibilityBitmask.set");
+	MarkNativeAsOptional("CursorAnnotation.ShowDistance.get");
+	MarkNativeAsOptional("CursorAnnotation.ShowDistance.set");
 	MarkNativeAsOptional("CursorAnnotation.Data.get");
 	MarkNativeAsOptional("CursorAnnotation.Data.set");
 	MarkNativeAsOptional("CursorAnnotation.SetText");
@@ -200,3 +221,6 @@ public void __pl_tf2hudmsg_SetNTVOptional() {
 	MarkNativeAsOptional("EscapeVGUILocalization");
 }
 #endif
+
+#pragma newdecls optional
+#pragma semicolon 0

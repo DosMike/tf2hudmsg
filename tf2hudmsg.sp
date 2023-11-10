@@ -22,37 +22,49 @@ public Plugin myinfo = {
 	name = "[TF2] Hud Msg",
 	author = "reBane",
 	description = "Providing natives for some Hud Elements and managing Cursor Annotation indices",
-	version = "21w35a",
+	version = "23w45a",
 	url = "N/A"
 }
 
 public void OnPluginStart() {
 	updateAnnotationsMapchange();
+	HookEventEx("show_annotation", Event_ShowAnnotation);
+	HookEventEx("hide_annotation", Event_ShowAnnotation);
 }
 
 
-public void OnMapStart() {
+public void OnMapEnd() {
 	updateAnnotationsMapchange();
 }
 
-#define MAX_ANNOTATION_COUNT 50*MAXPLAYERS
+#define MAX_ANNOTATION_COUNT 2048
 
 enum struct AnnotationData {
 	int followEntity;
-	bool idused;
+	bool idUsed;
 	float pos[3];
 	float lifetime;
 	float timeoutestimate; // the time where this annotation will be timed out (through lifetime after Send)
 	bool autoclose; //automatically reset the idused state after timeoutestimate or hide -> fire and forget
 	int visibility;
+	int visibilityPartition[4]; //manual target filtering
 	char text[MAX_ANNOTATION_LENGTH];
 	bool isDeployed;
 	any plugindata;
+	bool showDistance;
+	int playTick; //used to dirty check if an annotation was played by us
 	
 	void VisibleFor(int client, bool visible=true) {
-		//this will not work with more than 32 clients
-		if (visible) this.visibility |= (1<<client);
-		else this.visibility &=~ (1<<client);
+		int partition = client / 32;
+		int bitfieldBit = (1<<(client%32));
+		if (visible) {
+			this.visibility |= bitfieldBit;
+			this.visibilityPartition[partition] |= bitfieldBit;
+		}
+		else {
+			this.visibility &=~ bitfieldBit;
+			this.visibilityPartition[partition] &=~ bitfieldBit;
+		}
 	}
 	void SetText(const char[] text) {
 		strcopy(this.text, MAX_ANNOTATION_LENGTH, text);
@@ -62,22 +74,28 @@ enum struct AnnotationData {
 		else this.followEntity = (entity >= 0) ? EntIndexToEntRef(entity) : entity;
 	}
 	bool IsPlaying() {
+		if (!this.idUsed || !this.isDeployed) return false;
+		if (this.lifetime < 0) return true;
 		if (this.timeoutestimate <= GetGameTime()) {
-			if (this.autoclose) this.idused = false;
+			if (this.autoclose) this.idUsed = false;
 			this.isDeployed = false;
 		}
 		return this.isDeployed;
 	}
+	bool WillBeVisible() {
+		return this.visibilityPartition[0] != 0 || this.visibilityPartition[1] != 0 ||
+			this.visibilityPartition[2] != 0 || this.visibilityPartition[3] != 0;
+	}
 	/** @return true if the annotaion was sent to clients */
 	bool Send(int selfIndex, const char[] sound, bool showEffect = false) {
-		if (!(this.isDeployed = !!this.visibility)) return false; //ignrore if nobody will be able to see
+		//always update, but don't send if already hidden and nobody sees this
+		if (!this.isDeployed && !this.WillBeVisible()) return false;
 		Event event = CreateEvent("show_annotation");
 		if (event == INVALID_HANDLE) return false;
 		event.SetFloat("worldPosX", this.pos[0]);
 		event.SetFloat("worldPosY", this.pos[1]);
 		event.SetFloat("worldPosZ", this.pos[2]);
 		event.SetFloat("lifetime", this.lifetime);
-		// they seem to have a <bool>"show_distance"
 		event.SetInt("id", selfIndex);
 		if (!strlen(this.text)) //prevent default *AnnotationPannel_Callout
 			event.SetString("text", " ");
@@ -85,10 +103,21 @@ enum struct AnnotationData {
 			event.SetString("text", this.text);
 		event.SetString("play_sound", sound);
 		if (this.followEntity != INVALID_ENT_REFERENCE) event.SetInt("follow_entindex", EntRefToEntIndex(this.followEntity));
-		if (this.visibility != -1) event.SetInt("visibilityBitfield", this.visibility);
+		event.SetInt("visibilityBitfield", (this.visibility != -1 && MaxClients <= 32) ? this.visibility : -1);
 		if (showEffect) event.SetBool("show_effect", showEffect);
-		event.Fire();
-		this.timeoutestimate = GetGameTime() + (this.lifetime > 0.0 ? this.lifetime : 0.0);
+		if (this.showDistance) event.SetBool("show_distance", this.showDistance);
+		this.timeoutestimate = (this.lifetime > 0.0) ? (GetGameTime() + this.lifetime) : 0.0;
+		this.playTick = GetGameTickCount();
+		if (MaxClients > 32) {
+			for (int client=1; client <= MaxClients; client++) {
+				if ((this.visibilityPartition[client/32] & (1<<(client%32)))!=0 && IsClientInGame(client)) {
+					event.FireToClient(client);
+				}
+			}
+			event.Close();
+		} else {
+			event.Fire();
+		}
 		return true;
 	}
 	/** @return true if the annotation is hidden after call */
@@ -99,7 +128,7 @@ enum struct AnnotationData {
 		event.SetInt("id", selfIndex);
 		event.Fire();
 		this.isDeployed = false;
-		if (this.autoclose) this.idused = false;
+		if (this.autoclose) this.idUsed = false;
 		return true;
 	}
 }
@@ -108,11 +137,11 @@ any Impl_CursorAnnotation_new(int index = -1, bool reset=false) {
 	if (index < 0) {
 		//find free index
 		for (int i;i<MAX_ANNOTATION_COUNT;i++) {
-			if (!annotations[i].idused) {
+			if (!annotations[i].idUsed) {
 				index = i;
 				break;
-			} else if (annotations[i].autoclose && annotations[i].timeoutestimate <= GetGameTime()) {
-				annotations[i].idused = false;
+			} else if (annotations[i].autoclose && annotations[i].lifetime >= 0.0 && annotations[i].timeoutestimate <= GetGameTime()) {
+				annotations[i].idUsed = false;
 				index = i;
 				break;
 			}
@@ -121,15 +150,16 @@ any Impl_CursorAnnotation_new(int index = -1, bool reset=false) {
 	if (index < 0 || index >= MAX_ANNOTATION_COUNT) {
 		return -1;
 	}
-	if (!annotations[index].idused || reset) {
+	if (!annotations[index].idUsed || reset) {
 		float zero[3];
 		annotations[index].visibility = -1;
 		annotations[index].followEntity = INVALID_ENT_REFERENCE;
-		annotations[index].lifetime = 1000.0;
+		annotations[index].lifetime = 10.0;
 		annotations[index].SetText("< ERROR >");
 		annotations[index].pos = zero;
-		annotations[index].idused = true;
+		annotations[index].idUsed = true;
 		annotations[index].autoclose = false;
+		annotations[index].showDistance = false;
 		annotations[index].plugindata = 0;
 		if (annotations[index].isDeployed) {
 			annotations[index].Hide(index);
@@ -138,11 +168,41 @@ any Impl_CursorAnnotation_new(int index = -1, bool reset=false) {
 	return index;
 }
 
+public void Event_ShowAnnotation(Event event, const char[] name, bool dontBroadcast) {
+	int index = event.GetInt("id");
+	if (index < 0 || index >= MAX_ANNOTATION_COUNT) return; //we can't track this
+	if (name[0] == 's') {
+		annotations[index].isDeployed = true;
+		if (annotations[index].idUsed && annotations[index].playTick == GetGameTickCount()) {
+			return; //we know this is our event
+		}
+		annotations[index].visibility = event.GetInt("visibilityBitfield", -1);
+		int ent = event.GetInt("follow_entindex");
+		if (ent>=0 && IsValidEntity(ent)) ent = EntIndexToEntRef(ent);
+		else ent = INVALID_ENT_REFERENCE;
+		annotations[index].followEntity = ent;
+		event.GetString("text", annotations[index].text, MAX_ANNOTATION_LENGTH, "< ERROR >");
+		annotations[index].pos[0] = event.GetFloat("worldPosX");
+		annotations[index].pos[1] = event.GetFloat("worldPosY");
+		annotations[index].pos[2] = event.GetFloat("worldPosZ");
+		annotations[index].idUsed = true;
+		annotations[index].autoclose = false;
+		annotations[index].showDistance = event.GetBool("show_distance");
+		annotations[index].lifetime = event.GetFloat("lifetime");
+		annotations[index].timeoutestimate = (annotations[index].lifetime > 0) ? (GetGameTime() + annotations[index].lifetime) : 0.0;
+		annotations[index].plugindata = 0;
+	} else {
+		annotations[index].isDeployed = false;
+	}
+}
+
+
 void updateAnnotationsMapchange() {
 	for (int i;i<MAX_ANNOTATION_COUNT;i++) {
 		annotations[i].timeoutestimate = 0.0;
 		annotations[i].isDeployed = false;
-		if (annotations[i].autoclose) annotations[i].idused = false;
+		if (annotations[i].autoclose)
+			annotations[i].idUsed = false;
 	}
 }
 
@@ -180,6 +240,8 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("CursorAnnotation.SetVisibilityAll",     Native_CursorAnnotation_SetVisibilityAll);
 	CreateNative("CursorAnnotation.VisibilityBitmask.get",Native_CursorAnnotation_VisibilityBitmask_Get);
 	CreateNative("CursorAnnotation.VisibilityBitmask.set",Native_CursorAnnotation_VisibilityBitmask_Set);
+	CreateNative("CursorAnnotation.ShowDistance.get",     Native_CursorAnnotation_ShowDistance_Get);
+	CreateNative("CursorAnnotation.ShowDistance.set",     Native_CursorAnnotation_ShowDistance_Set);
 	CreateNative("CursorAnnotation.Data.get",             Native_CursorAnnotation_Data_Get);
 	CreateNative("CursorAnnotation.Data.set",             Native_CursorAnnotation_Data_Set);
 	CreateNative("CursorAnnotation.SetText",              Native_CursorAnnotation_SetText);
@@ -200,6 +262,15 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	return APLRes_Success;
 }
 
+bool Helper_ValidIndex(int index, bool checkUsed=true) {
+	if (index < 0 || index >= MAX_ANNOTATION_COUNT)
+		ThrowNativeError(SP_ERROR_INDEX, "Invalid CursorAnnotation", index);
+	else if (checkUsed && !annotations[index].idUsed)
+		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	else return true;
+	return false;
+}
+
 public any Native_CursorAnnotation_new(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
 	bool reset = view_as<bool>(GetNativeCell(2));
@@ -210,64 +281,77 @@ public any Native_CursorAnnotation_Close(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
 	
 	annotations[index].Hide(index);
-	annotations[index].idused = false;
+	annotations[index].idUsed = false;
+	return 0;
 }
 public any Native_CursorAnnotation_IsValid_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
 	
-	return index>=0 && index<MAX_ANNOTATION_COUNT && annotations[index].idused;
+	return index>=0 && index<MAX_ANNOTATION_COUNT && annotations[index].idUsed;
 }
 public any Native_CursorAnnotation_SetVisibilityFor(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
+	
 	int client = view_as<int>(GetNativeCell(2));
 	bool visible = view_as<bool>(GetNativeCell(3));
 	
 	annotations[index].VisibleFor(client, visible);
+	return 0;
 }
 public any Native_CursorAnnotation_SetVisibilityAll(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	bool visible = view_as<bool>(GetNativeCell(2));
 	
 	annotations[index].visibility = (visible) ? -1 : 0;
+	return 0;
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	
 	return annotations[index].visibility;
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	int value = view_as<int>(GetNativeCell(2));
 	
 	annotations[index].visibility = value;
+	return 0;
+}
+public any Native_CursorAnnotation_ShowDistance_Get(Handle plugin, int argc) {
+	int index = view_as<int>(GetNativeCell(1));
+	if (!Helper_ValidIndex(index)) return 0;
+	
+	return annotations[index].showDistance;
+}
+public any Native_CursorAnnotation_ShowDistance_Set(Handle plugin, int argc) {
+	int index = view_as<int>(GetNativeCell(1));
+	if (!Helper_ValidIndex(index)) return 0;
+	any value = GetNativeCell(2);
+	
+	annotations[index].showDistance = value != 0;
+	return 0;
 }
 public any Native_CursorAnnotation_Data_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	
 	return annotations[index].plugindata;
 }
 public any Native_CursorAnnotation_Data_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	any value = GetNativeCell(2);
 	
 	annotations[index].plugindata = value;
+	return 0;
 }
 public any Native_CursorAnnotation_SetText(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	int len;
 	GetNativeStringLength(2,len);
 	char[] text = new char[len+1];
@@ -279,69 +363,66 @@ public any Native_CursorAnnotation_SetText(Handle plugin, int argc) {
 }
 public any Native_CursorAnnotation_SetPosition(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	float vec[3];
 	GetNativeArray(2,vec,sizeof(vec));
 	
 	annotations[index].pos = vec;
+	return 0;
 }
 public any Native_CursorAnnotation_GetPosition(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	float vec[3];
 	
 	vec = annotations[index].pos;
 	SetNativeArray(2,vec,sizeof(vec));
+	return 0;
 }
 public any Native_CursorAnnotation_SetLifetime(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	float lifetime = view_as<float>(GetNativeCell(2));
 	
 	annotations[index].lifetime = lifetime;
+	return 0;
 }
 public any Native_CursorAnnotation_ParentEntity_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	
 	return annotations[index].followEntity;
 }
 public any Native_CursorAnnotation_ParentEntity_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	int entity = view_as<int>(GetNativeCell(2));
 	
 	annotations[index].SetParent(entity);
+	return 0;
 }
 public any Native_CursorAnnotation_IsPlaying_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!Helper_ValidIndex(index, false)) return 0;
 	
 	return annotations[index].IsPlaying();
 }
 public any Native_CursorAnnotation_AutoClose_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	
 	return annotations[index].autoclose;
 }
 public any Native_CursorAnnotation_AutoClose_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	bool value = view_as<bool>(GetNativeCell(2));
 	
 	return annotations[index].autoclose = value;
 }
 public any Native_CursorAnnotation_Update(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
-	if (!annotations[index].idused)
-		ThrowNativeError(SP_ERROR_INDEX, "The cursor annotation (%i) is closed", index);
+	if (!Helper_ValidIndex(index)) return 0;
 	int len;
 	GetNativeStringLength(2,len);
 	char[] sound = new char[len+1];
@@ -349,11 +430,14 @@ public any Native_CursorAnnotation_Update(Handle plugin, int argc) {
 	bool effect = view_as<bool>(GetNativeCell(3));
 	
 	annotations[index].Send(index, sound, effect);
+	return 0;
 }
 public any Native_CursorAnnotation_Hide(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
+	if (!Helper_ValidIndex(index, false)) return 0;
 	
 	annotations[index].Hide(index);
+	return 0;
 }
 
 //native void TF2_HudNotificationCustom(int client, const char[] icon="voice_self", int background=-1, bool stripMoreColors=false, const char[] message, any ...);
@@ -361,7 +445,7 @@ public any Native_TF2_HudNotificationCustom(Handle plugin, int argc) {
 	int client = view_as<int>(GetNativeCell(1));
 	int maxlen;
 	GetNativeStringLength(2, maxlen);
-	if (maxlen < 0) return;
+	if (maxlen < 0) return 0;
 	char[] icon = new char[maxlen+1];
 	GetNativeString(2,icon,maxlen+1);
 	int background = view_as<int>(GetNativeCell(3));
@@ -371,13 +455,14 @@ public any Native_TF2_HudNotificationCustom(Handle plugin, int argc) {
 	FormatNativeString(0,5,6,MAX_MESSAGE_LENGTH,_,message,_);
 	
 	Impl_HudNotificationCustom(client, icon, background, stripcol, message);
+	return 0;
 }
 
 //native void TF2_HudNotificationCustomAll(const char[] icon="voice_self", int background=-1, bool stripMoreColors=false, const char[] message, any ...);
 public any Native_TF2_HudNotificationCustomAll(Handle plugin, int argc) {
 	int maxlen;
 	GetNativeStringLength(1, maxlen);
-	if (maxlen < 0) return;
+	if (maxlen < 0) return 0;
 	char[] icon = new char[maxlen+1];
 	GetNativeString(1,icon,maxlen+1);
 	int background = view_as<int>(GetNativeCell(2));
@@ -389,27 +474,30 @@ public any Native_TF2_HudNotificationCustomAll(Handle plugin, int argc) {
 		FormatNativeString(0,4,5,MAX_MESSAGE_LENGTH,_,message,_);
 		Impl_HudNotificationCustom(i, icon, background, stripcol, message);
 	}
+	return 0;
 }
 
 //native void EscapeVGUILocalization(char[] buffer, int maxsize);
 public any Native_EscapeVGUILocalization(Handle plugin, int argc) {
-	if (IsNativeParamNullString(1)) return;
+	if (IsNativeParamNullString(1)) return 0;
 	int maxlen = view_as<int>(GetNativeCell(2));
 	int inlen;
 	char[] buffer = new char[maxlen];
 	GetNativeString(1, buffer, maxlen, inlen);
-	if (!inlen) return; //string is empty, nothing to do
+	if (!inlen) return 0; //string is empty, nothing to do
 	
 	//prevent #LocalizationKeys from being looked up
 	// For a localization to be considered, the string MIGHT start with a number sign but they usually
 	// don't contain spaces and are ASCII strings
 	// Not being a localization does not modify the string but we have no real way to check if this is
 	// a localization or not, so let's just prefix it with a space (barely noticable in annotations)
-	bool mightkey=true;
-	for(int i=0;i<maxlen;i++) { //check if this matches ^#?\w*$
-		if (buffer[i]==0) break;
-		if (!('a' <= buffer[i] <= 'z' || 'A' <= buffer[i] <= 'Z' || '0' <= buffer[i] <= '9' || buffer[i]=='_' || buffer[i]=='-' || (!i && buffer[i]=='#'))) {
+	bool mightkey = true;
+	//check if this matches ^#?\w*$
+	int i = (buffer[0]=='#')?1:0; // ^#?
+	for(; i < maxlen && buffer[i]; i++) { // \w*$
+		if (!('a' <= buffer[i] <= 'z' || 'A' <= buffer[i] <= 'Z' || '0' <= buffer[i] <= '9' || buffer[i]=='_' || buffer[i]=='-')) {
 			mightkey=false;
+			break;
 		}
 	}
 	if (mightkey) {
@@ -422,4 +510,5 @@ public any Native_EscapeVGUILocalization(Handle plugin, int argc) {
 	
 	//alright, let's copy you back where you belong
 	SetNativeString(1, buffer, maxlen);
+	return 0;
 }
