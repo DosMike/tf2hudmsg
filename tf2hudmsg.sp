@@ -22,7 +22,7 @@ public Plugin myinfo = {
 	name = "[TF2] Hud Msg",
 	author = "reBane",
 	description = "Providing natives for some Hud Elements and managing Cursor Annotation indices",
-	version = "23w45a",
+	version = "23w45b",
 	url = "N/A"
 }
 
@@ -46,7 +46,6 @@ enum struct AnnotationData {
 	float lifetime;
 	float timeoutestimate; // the time where this annotation will be timed out (through lifetime after Send)
 	bool autoclose; //automatically reset the idused state after timeoutestimate or hide -> fire and forget
-	int visibility;
 	int visibilityPartition[4]; //manual target filtering
 	char text[MAX_ANNOTATION_LENGTH];
 	bool isDeployed;
@@ -58,11 +57,8 @@ enum struct AnnotationData {
 		int partition = client / 32;
 		int bitfieldBit = (1<<(client%32));
 		if (visible) {
-			this.visibility |= bitfieldBit;
 			this.visibilityPartition[partition] |= bitfieldBit;
-		}
-		else {
-			this.visibility &=~ bitfieldBit;
+		} else {
 			this.visibilityPartition[partition] &=~ bitfieldBit;
 		}
 	}
@@ -71,7 +67,10 @@ enum struct AnnotationData {
 	}
 	void SetParent(int entity) {
 		if (!IsValidEdict(entity)) this.followEntity = INVALID_ENT_REFERENCE;
-		else this.followEntity = (entity >= 0) ? EntIndexToEntRef(entity) : entity;
+		else {
+			// value outside entity limits means, that this is probably already an entref
+			this.followEntity = (0 <= entity < 4096) ? EntIndexToEntRef(entity) : entity;
+		}
 	}
 	bool IsPlaying() {
 		if (!this.idUsed || !this.isDeployed) return false;
@@ -103,12 +102,13 @@ enum struct AnnotationData {
 			event.SetString("text", this.text);
 		event.SetString("play_sound", sound);
 		if (this.followEntity != INVALID_ENT_REFERENCE) event.SetInt("follow_entindex", EntRefToEntIndex(this.followEntity));
-		event.SetInt("visibilityBitfield", (this.visibility != -1 && MaxClients <= 32) ? this.visibility : -1);
 		if (showEffect) event.SetBool("show_effect", showEffect);
 		if (this.showDistance) event.SetBool("show_distance", this.showDistance);
 		this.timeoutestimate = (this.lifetime > 0.0) ? (GetGameTime() + this.lifetime) : 0.0;
 		this.playTick = GetGameTickCount();
 		if (MaxClients > 32) {
+			//use "all", as we send to single clients anyways, FireToClient does not hook either
+			event.SetInt("visibilityBitfield", 0xFFFFFFFF);
 			for (int client=1; client <= MaxClients; client++) {
 				if ((this.visibilityPartition[client/32] & (1<<(client%32)))!=0 && IsClientInGame(client)) {
 					event.FireToClient(client);
@@ -116,6 +116,9 @@ enum struct AnnotationData {
 			}
 			event.Close();
 		} else {
+			//create lowest partition as legacy bitfield
+			int bits = this.visibilityPartition[0] | (this.visibilityPartition[1] & 1);
+			event.SetInt("visibilityBitfield", bits);
 			event.Fire();
 		}
 		return true;
@@ -152,7 +155,11 @@ any Impl_CursorAnnotation_new(int index = -1, bool reset=false) {
 	}
 	if (!annotations[index].idUsed || reset) {
 		float zero[3];
-		annotations[index].visibility = -1;
+		//default visible to all
+		annotations[index].visibilityPartition[0] = 0xFFFFFFFE;
+		annotations[index].visibilityPartition[1] = 0xFFFFFFFF;
+		annotations[index].visibilityPartition[2] = 0xFFFFFFFF;
+		annotations[index].visibilityPartition[3] = 0xFFFFFFFF;
 		annotations[index].followEntity = INVALID_ENT_REFERENCE;
 		annotations[index].lifetime = 10.0;
 		annotations[index].SetText("< ERROR >");
@@ -176,7 +183,11 @@ public void Event_ShowAnnotation(Event event, const char[] name, bool dontBroadc
 		if (annotations[index].idUsed && annotations[index].playTick == GetGameTickCount()) {
 			return; //we know this is our event
 		}
-		annotations[index].visibility = event.GetInt("visibilityBitfield", -1);
+		//import with legacy behaviour, bit 0 should always be 0 as it can't be updated later
+		annotations[index].visibilityPartition[1] = event.GetInt("visibilityBitfield", 0xFFFFFFFF);
+		annotations[index].visibilityPartition[2] = annotations[index].visibilityPartition[1];
+		annotations[index].visibilityPartition[3] = annotations[index].visibilityPartition[1];
+		annotations[index].visibilityPartition[0] = (annotations[index].visibilityPartition[1] & 0xFFFFFFFE);
 		int ent = event.GetInt("follow_entindex");
 		if (ent>=0 && IsValidEntity(ent)) ent = EntIndexToEntRef(ent);
 		else ent = INVALID_ENT_REFERENCE;
@@ -304,21 +315,28 @@ public any Native_CursorAnnotation_SetVisibilityAll(Handle plugin, int argc) {
 	if (!Helper_ValidIndex(index)) return 0;
 	bool visible = view_as<bool>(GetNativeCell(2));
 	
-	annotations[index].visibility = (visible) ? -1 : 0;
+	int newvalue = (visible) ? 0xFFFFFFFF : 0;
+	annotations[index].visibilityPartition[0] = (newvalue & 0xFFFFFFFE); //we have player index 32 in the next partition
+	annotations[index].visibilityPartition[1] = newvalue;
+	annotations[index].visibilityPartition[2] = newvalue;
+	annotations[index].visibilityPartition[3] = newvalue;
 	return 0;
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Get(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
 	if (!Helper_ValidIndex(index)) return 0;
-	
-	return annotations[index].visibility;
+	//construct legacy bitmask
+	return annotations[index].visibilityPartition[0] | (annotations[index].visibilityPartition[1] & 1);
 }
 public any Native_CursorAnnotation_VisibilityBitmask_Set(Handle plugin, int argc) {
 	int index = view_as<int>(GetNativeCell(1));
 	if (!Helper_ValidIndex(index)) return 0;
 	int value = view_as<int>(GetNativeCell(2));
-	
-	annotations[index].visibility = value;
+	//set from bitmask with legacy behaviour
+	annotations[index].visibilityPartition[0] = (value & 0xFFFFFFFE); //we have player index 32 in the next partition
+	annotations[index].visibilityPartition[1] = value;
+	annotations[index].visibilityPartition[2] = value;
+	annotations[index].visibilityPartition[3] = value;
 	return 0;
 }
 public any Native_CursorAnnotation_ShowDistance_Get(Handle plugin, int argc) {
